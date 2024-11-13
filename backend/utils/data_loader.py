@@ -3,7 +3,7 @@ from models import db, Game, StreamingPackage, StreamingOffer
 
 def load_data():
     games_df = pd.read_csv("data/games.csv")
-    for _, game in games_df.iterrows():
+    for _, row in games_df.iterrows():
         game = Game(
             id=row['id'],
             team_home=row['team_home'],
@@ -15,7 +15,7 @@ def load_data():
     db.session.commit()
 
     packages_df = pd.read_csv("data/streaming_packages.csv")
-    for _, package in packages_df.iterrows():
+    for _, row in packages_df.iterrows():
         package = StreamingPackage(
             id=row['id'],
             name=row['name'],
@@ -26,7 +26,7 @@ def load_data():
     db.session.commit()
 
     offers_df = pd.read_csv("data/streaming_offers.csv")
-    for _, offer in offers_df.iterrows():
+    for _, row in offers_df.iterrows():
         offer = StreamingOffer(
             id=row['id'],
             game_id=row['game_id'],
