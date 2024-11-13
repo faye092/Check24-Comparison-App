@@ -1,14 +1,31 @@
 from flask import Blueprint, jsonify
-from models import StreamingPackage
+from models import Game
 
-packages_blueprint = Blueprint('packages', __name__)
+games_blueprint = Blueprint('games', __name__)
 
-@packages_blueprint.route('/', methods=['GET'])
-def get_packages():
-    packages = StreamingPackage.query.all()
-    return jsonify([{
-        'id': package.id,
-        'name': package.name,
-        'monthly_price_cents': package.monthly_price_cents,
-        'monthly_price_yearly_subscription_in_cents': package.monthly_price_yearly_subscription_in_cents
-    } for package in packages])
+# get all games
+@games_blueprint.route('/', methods=['GET'])
+def get_all_games():
+    games = Game.query.all()
+    result = [{
+        'id': game.id,
+        'team_home': game.team_home,
+        'team_away': game.team_away,
+        'starts_at': game.starts_at,
+        'tournament_name': game.tournament_name
+    } for game in games]
+    return jsonify(result)
+
+
+# get game by team name
+@games_blueprint.route('/<team_name>', methods=['GET'])
+def get_games_by_team(team_name):
+    games = Game.query.filter((Game.team_home == team_name) | (Game.team_away == team_name)).all()
+    result = [{
+        'id': game.id,
+        'team_home': game.team_home,
+        'team_away': game.team_away,
+        'starts_at': game.starts_at,
+        'tournament_name': game.tournament_name
+    }for game in games]
+    return jsonify(result)
