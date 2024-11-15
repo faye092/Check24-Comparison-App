@@ -1,5 +1,7 @@
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 from models import Game
+from datetime import datetime
+from sqlalchemy import or_, and_
 
 games_blueprint = Blueprint('games', __name__)
 
@@ -42,3 +44,21 @@ def get_games_by_tournament(tournament_name):
         'tournament_name': game.tournament_name
     }for game in games]
     return jsonify(result)
+
+# get game by month-year, as that's relate to the subcription
+@games_blueprint.route('/by_year_month', methods=['GET'])
+def get_games_by_year_month():
+    games = Game.query.all()
+    games_by_year_month = {}
+    for game in games:
+        year_month = game.starts_at.strftime("%Y-%m")  # Group by "year-month"
+        if year_month not in games_by_year_month:
+            games_by_year_month[year_month] = []
+        games_by_year_month[year_month].append({
+            'id': game.id,
+            'team_home': game.team_home,
+            'team_away': game.team_away,
+            'starts_at': game.starts_at,
+            'tournament_name': game.tournament_name
+        })
+    return jsonify(games_by_year_month)
