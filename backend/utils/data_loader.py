@@ -13,7 +13,6 @@ def load_data():
         )
         db.session.add(game)
     db.session.commit()
-
     packages_df = pd.read_csv("data/streaming_packages.csv")
     for _, row in packages_df.iterrows():
         package = StreamingPackage(
