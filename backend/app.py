@@ -33,5 +33,10 @@ app.register_blueprint(games_blueprint, url_prefix="/games")
 app.register_blueprint(packages_blueprint, url_prefix="/packages")
 app.register_blueprint(offers_blueprint, url_prefix="/offers")
 
+# add a default root route
+@app.route("/")
+def home():
+    return "Welcome to the Check24 Streaming Package Comparison Page!"
+
 if __name__ == "__main__":
     app.run(debug=True)

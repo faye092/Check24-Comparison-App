@@ -19,6 +19,12 @@ def load_data():
 
             # load the package and offer data
             packages_df = pd.read_csv("data/bc_streaming_package.csv")
+
+            # process streaming package data
+            # if monthly_price_cents is NaN and the annual subscription fee is not 0, it is considered that the monthly subscription service is not provided
+            packages_df['monthly_price_cents'] = packages_df['monthly_price_cents'].fillna(-1).astype(int)
+            packages_df['monthly_price_yearly_subscription_in_cents'] = packages_df['monthly_price_yearly_subscription_in_cents'].fillna(0).astype(int)
+
             packages = [
                 StreamingPackage(
                     id=row['id'],
@@ -34,7 +40,6 @@ def load_data():
             offers_df = pd.read_csv("data/bc_streaming_offer.csv")
             offers = [
                 StreamingOffer(
-                    id=row['id'],
                     game_id=row['game_id'],
                     streaming_package_id=row['streaming_package_id'],
                     live=row['live'],
