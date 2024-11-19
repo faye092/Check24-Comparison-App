@@ -3,7 +3,7 @@ from models import db, Game, StreamingPackage, StreamingOffer
 
 def load_data():
     try:
-        with db.session.begin():
+            # load the game data
             games_df = pd.read_csv("data/bc_game.csv")
             games = [
                 Game(
@@ -17,7 +17,8 @@ def load_data():
             ]
             db.session.bulk_save_objects(games)
 
-            packages_df = pd.read_csv("data/streaming_packages.csv")
+            # load the package and offer data
+            packages_df = pd.read_csv("data/bc_streaming_package.csv")
             packages = [
                 StreamingPackage(
                     id=row['id'],
@@ -29,7 +30,8 @@ def load_data():
             ]
             db.session.bulk_save_objects(packages)
 
-            offers_df = pd.read_csv("data/streaming_offers.csv")
+            # load the offer data
+            offers_df = pd.read_csv("data/bc_streaming_offer.csv")
             offers = [
                 StreamingOffer(
                     id=row['id'],
@@ -42,5 +44,9 @@ def load_data():
             ]
             db.session.bulk_save_objects(offers)
 
+            # commit the changes
+            db.session.commit()
+
     except Exception as e:
+        db.session.rollback() # if an error occurs, rollback the changes
         print(f"Error loading data: {e}")
