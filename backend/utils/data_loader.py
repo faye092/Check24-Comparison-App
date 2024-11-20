@@ -16,25 +16,34 @@ def load_data():
                 for _, row in games_df.iterrows()
             ]
             db.session.bulk_save_objects(games)
+            db.session.commit() # commit after loading games
+            print("Game data loaded successfully")
 
             # load the package and offer data
             packages_df = pd.read_csv("data/bc_streaming_package.csv")
 
-            # process streaming package data
-            # if monthly_price_cents is NaN and the annual subscription fee is not 0, it is considered that the monthly subscription service is not provided
-            packages_df['monthly_price_cents'] = packages_df['monthly_price_cents'].fillna(-1).astype(int)
-            packages_df['monthly_price_yearly_subscription_in_cents'] = packages_df['monthly_price_yearly_subscription_in_cents'].fillna(0).astype(int)
+            # debugging: print loaded games to ensure correct insertion
+            inserted_games = Game.query.all()
+            print(f"Inserted games count: {len(inserted_games)}")
 
+            # load streaming package data
+            packages_df = pd.read_csv("data/bc_streaming_package.csv")
             packages = [
                 StreamingPackage(
                     id=row['id'],
                     name=row['name'],
-                    monthly_price_cents=row['monthly_price_cents'],
-                    monthly_price_yearly_subscription_in_cents=row['monthly_price_yearly_subscription_in_cents']
+                    monthly_price_cents=row['monthly_price_cents'] if pd.notna(row['monthly_price_cents']) else None,
+                    monthly_price_yearly_subscription_in_cents=row['monthly_price_yearly_subscription_in_cents'] if pd.notna(row['monthly_price_yearly_subscription_in_cents']) else None
                 )
                 for _, row in packages_df.iterrows()
             ]
             db.session.bulk_save_objects(packages)
+            db.session.commit()  # commit after loading packages
+            print("Streaming package data loaded successfully.")
+
+            # debugging: Print loaded packages to ensure correct insertion
+            inserted_packages = StreamingPackage.query.all()
+            print(f"Inserted streaming packages count: {len(inserted_packages)}")
 
             # load the offer data
             offers_df = pd.read_csv("data/bc_streaming_offer.csv")
@@ -47,10 +56,23 @@ def load_data():
                 )
                 for _, row in offers_df.iterrows()
             ]
-            db.session.bulk_save_objects(offers)
 
-            # commit the changes
-            db.session.commit()
+            # debugging: ensure the game_id and streaming_package_id exist before insertion
+            for offer in offers:
+                 game_exists = Game.query.get(offer.game_id) is not None
+                 package_exists = StreamingPackage.query.get(offer.streaming_package_id) is not None
+                 if not game_exists:
+                      print(f"Warning: Game with ID {offer.game_id} does not exist.")
+
+                 if not package_exists:
+                      print(f"Warning: Streaming package with ID {offer.streaming_package_id} does not exist.")
+            db.session.bulk_save_objects(offers)          
+            db.session.commit() # commit after loading offers
+            print("Streaming offer data loaded successfully.")
+
+            # debugging: print loaded offers to ensure correct insertion
+            inserted_offers = StreamingOffer.query.all()
+            print(f"Inserted streaming offers count: {len(inserted_offers)}")
 
     except Exception as e:
         db.session.rollback() # if an error occurs, rollback the changes
