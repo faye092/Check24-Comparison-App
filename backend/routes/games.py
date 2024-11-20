@@ -26,12 +26,21 @@ def get_all_games():
 def get_games_by_team(team_name):
     try:
         team_name = team_name.strip().lower() # remove whitespace and convert to lowercase
-        games = Game.query.filter(
+        team_type = request.args.get('team_type') # 'home', 'away' or 'both'
+        page = request.args.get('page',1, type=int)
+        per_page = request.args.get('per_page',20, type=int)
+        
+        if team_type == 'home':
+            games = Game.query.filter(func.lower(Game.team_home) == team_name).paginate(page=page, per_page=per_page, error_out=False)
+        elif team_type == 'away':
+            games = Game.query.filter(func.lower(Game.team_away) == team_name).paginate(page=page, per_page=per_page, error_out=False)
+        else: #default to both
+            games = Game.query.filter(
             (func.lower(Game.team_home) == team_name) | 
             (func.lower(Game.team_away) == team_name)
-        ).all()
+            ).paginate(page=page, per_page=per_page, error_out=False)
 
-        if not games:
+        if not games.items:
             return jsonify({'message':f'No games found for team {team_name}'}), 404
         
         result = [{
@@ -40,7 +49,7 @@ def get_games_by_team(team_name):
             'team_away': game.team_away,
             'starts_at': game.starts_at.strftime("%Y-%m-%d %H:%M:%S"),
             'tournament_name': game.tournament_name
-        } for game in games]
+        } for game in games.items]
 
         return jsonify(result)
     
@@ -53,8 +62,11 @@ def get_games_by_team(team_name):
 def get_games_by_tournament(tournament_name):
     try:
         tournament_name = tournament_name.strip().lower() # remove whitespace and convert to lowercase
-        games = Game.query.filter(func.lower(Game.tournament_name) == tournament_name).all()
-        if not games:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        games = Game.query.filter(func.lower(Game.tournament_name) == tournament_name).paginate(page=page, per_page=per_page, error_out=False)
+
+        if not games.items:
             return jsonify({'message':f'No games found for tournament {tournament_name}'}), 404
         result = [{
             'id': game.id,
@@ -62,7 +74,7 @@ def get_games_by_tournament(tournament_name):
             'team_away': game.team_away,
             'starts_at': game.starts_at.strftime("%Y-%m-%d %H:%M:%S"),
             'tournament_name': game.tournament_name
-        } for game in games]
+        } for game in games.items]
         return jsonify(result)
 
     except Exception as e:
@@ -76,6 +88,8 @@ def get_games_by_year_month():
     try:
         year = request.args.get('year')
         month = request.args.get('month')
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
 
         if not year or not month:
             return jsonify({'error': 'Please provide both year and month'}), 400
@@ -83,9 +97,9 @@ def get_games_by_year_month():
         games = Game.query.filter(
             func.strftime('%Y', Game.starts_at) == year,
             func.strftime('%m', Game.starts_at) == month
-        ).all()
+        ).paginate(page=page, per_page=per_page, error_out=False)
 
-        if not games:
+        if not games.items:
             return jsonify({'message': f'No games found for {year}-{month}'}), 404
 
         result = [{
@@ -94,7 +108,7 @@ def get_games_by_year_month():
             'team_away': game.team_away,
             'starts_at': game.starts_at.strftime("%Y-%m-%d %H:%M:%S"),
             'tournament_name': game.tournament_name
-        } for game in games]
+        } for game in games.items]
 
         return jsonify(result)
 
