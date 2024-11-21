@@ -1,101 +1,187 @@
-from flask import Blueprint, jsonify, request, abort
+from flask import Blueprint, jsonify, request
 from models import StreamingOffer, Game, StreamingPackage
-from sqlalchemy.orm import joinedload
 from sqlalchemy import func
+import logging
 
-# initialize Blueprint for offers
-offers_blueprint = Blueprint("offers", __name__, url_prefix='/offers')
+# Initialize Blueprint for offers with a URL prefix
+offers_blueprint = Blueprint('offers', __name__, url_prefix='/offers')
 
-# 1. get streaming offers for a specific game
-def get_offers_by_game(game_id):
-    try:
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-        offers = StreamingOffer.query.options(joinedload(StreamingOffer.game)).filter_by(game_id=game_id).paginate(page=page, per_page=per_page, error_out=False)
-        if not offers.items:
-            return jsonify({'message':f'No streaming offers found for game ID {game_id}'}), 404
-        
-        # format the result to display relevant streaming offers
-        result = [{
-            'game_id': offer.game_id,
-            'streaming_package_id': offer.streaming_package_id,
-            'live': offer.live,
-            'highlights': offer.highlights
-        } for offer in offers.items]
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-        return jsonify(result)
-    
-    except Exception as e:
-        print(f"Error fetching offers for game ID {game_id}: {e}")
-        return jsonify({'error': 'Internal Server Error'}), 500
-    
-# 2. get games available for a specific package
-def get_games_by_package(package_id):
-    try:
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-        offers = StreamingOffer.query.options(joinedload(StreamingOffer.game)).filter_by(streaming_package_id=package_id).paginate(page=page, per_page=per_page, error_out=False)
-        if not offers.items:
-            return jsonify({'message': f'No games found for streaming package ID {package_id}'}), 404
-        
-        # format the result to display relevant games
-        result = [{
-            'package_id': offer.streaming_package_id,
-            'game_id': offer.game_id,
+# Get all offers
+@offers_blueprint.route('/', methods=['GET'])
+def get_all_offers():
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    if page <= 0 or per_page <= 0:
+        return jsonify({'error': 'Page and per_page must be positive integers'}), 400
+
+    offers = StreamingOffer.query.paginate(page=page, per_page=per_page, error_out=False)
+    result = [{
+        'id': offer.id,
+        'game_id': offer.game_id,
+        'streaming_package_id': offer.streaming_package_id,
+        'live': offer.live,
+        'highlights': offer.highlights,
+        'game_details': {
             'team_home': offer.game.team_home,
             'team_away': offer.game.team_away,
             'starts_at': offer.game.starts_at.strftime("%Y-%m-%d %H:%M:%S"),
-            'tournament_name': offer.game.tournament_name,
-            'live': offer.live,
-            'highlights': offer.highlights
-        } for offer in offers.items]
-        
-        return jsonify(result)
-    
-    except Exception as e:
-        print(f"Error fetching games for streaming package ID {package_id}: {e}")
-        return jsonify({'error': 'Internal Server Error'}), 500
-    
-# 3.filter offers by conditions(live, highlights, etc.)
-@offers_blueprint.route('/filter', methods=['GET'])
-def filter_offers():
+            'tournament_name': offer.game.tournament_name
+        },
+        'package_details': {
+            'name': offer.package.name,
+            'monthly_price_cents': offer.package.monthly_price_cents,
+            'monthly_price_yearly_subscription_in_cents': offer.package.monthly_price_yearly_subscription_in_cents
+        }
+    } for offer in offers.items]
+    return jsonify(result)
+
+# Get offers by game name
+@offers_blueprint.route('/by_game_name', methods=['GET'])
+def get_offers_by_game_name():
     try:
-        live_only = request.args.get('live', type=bool, default=False)
-        highlights_only = request.args.get('highlights', type=bool, default=False)
+        tournament_name = request.args.get('tournament_name', '').strip().lower()
+        team_home = request.args.get('team_home', '').strip().lower()
+        team_away = request.args.get('team_away', '').strip().lower()
+        if not tournament_name and not team_home and not team_away:
+            return jsonify({'error': 'At least one of tournament_name, team_home, or team_away is required'}), 400
+
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
 
-        # create a base query that can be extended based on request parameters
-        query = StreamingOffer.query
+        query = Game.query
+        if tournament_name:
+            query = query.filter(func.lower(Game.tournament_name).ilike(f'%{tournament_name}%'))
+        if team_home:
+            query = query.filter(func.lower(Game.team_home).ilike(f'%{team_home}%'))
+        if team_away:
+            query = query.filter(func.lower(Game.team_away).ilike(f'%{team_away}%'))
 
-        if live_only:
-            query = query.filter_by(live=True)
-        if highlights_only:
-            query = query.filter_by(highlights=True)
+        games = query.paginate(page=page, per_page=per_page, error_out=False)
+        offers = StreamingOffer.query.filter(StreamingOffer.game_id.in_([game.id for game in games.items])).all()
 
-        # execute query and load related games and packages to provide a comprehensive response
-        offers = query.options(joinedload(StreamingOffer.game), joinedload(StreamingOffer.streaming_package)).paginate(page=page, per_page=per_page, error_out=False)
-
-        if not offers.items:
-            return jsonify({'message': 'No offers found for the given criteria'}), 404
-        
-        # format the result for display
         result = [{
-            'game_id': offer.game_id,
-            'team_home': offer.game.team_home,
-            'team_away': offer.game.team_away,
-            'starts_at': offer.game.starts_at.strftime("%Y-%m-%d %H:%M:%S"),
-            'tournament_name': offer.game.tournament_name,
-            'package_id': offer.streaming_package_id,
+            'id': offer.id,
             'live': offer.live,
-            'highlights': offer.highlights
-        } for offer in offers.items]
+            'highlights': offer.highlights,
+            'game_details': {
+                'team_home': offer.game.team_home,
+                'team_away': offer.game.team_away,
+                'starts_at': offer.game.starts_at.strftime("%Y-%m-%d %H:%M:%S"),
+                'tournament_name': offer.game.tournament_name
+            },
+            'package_details': {
+                'name': offer.package.name,
+                'monthly_price_cents': offer.package.monthly_price_cents,
+                'monthly_price_yearly_subscription_in_cents': offer.package.monthly_price_yearly_subscription_in_cents
+            }
+        } for offer in offers]
 
-        return jsonify(result)
-    
+        return jsonify(result) if offers else jsonify([]), 200
+
     except Exception as e:
-        print(f"Error filtering offers: {e}")
+        logger.error(f"Error fetching offers by game name: {e}")
         return jsonify({'error': 'Internal Server Error'}), 500
 
+# Get offers by package name
+@offers_blueprint.route('/by_package_name', methods=['GET'])
+def get_offers_by_package_name():
+    try:
+        package_name = request.args.get('package_name', '').strip().lower()
+        if not package_name:
+            return jsonify({'error': 'Package name is required'}), 400
 
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
 
+        packages = StreamingPackage.query.filter(func.lower(StreamingPackage.name).ilike(f'%{package_name}%')).paginate(page=page, per_page=per_page, error_out=False)
+        offers = StreamingOffer.query.filter(StreamingOffer.streaming_package_id.in_([package.id for package in packages.items])).all()
+
+        result = [{
+            'id': offer.id,
+            'live': offer.live,
+            'highlights': offer.highlights,
+            'game_details': {
+                'team_home': offer.game.team_home,
+                'team_away': offer.game.team_away,
+                'starts_at': offer.game.starts_at.strftime("%Y-%m-%d %H:%M:%S"),
+                'tournament_name': offer.game.tournament_name
+            },
+            'package_details': {
+                'name': offer.package.name,
+                'monthly_price_cents': offer.package.monthly_price_cents,
+                'monthly_price_yearly_subscription_in_cents': offer.package.monthly_price_yearly_subscription_in_cents
+            }
+        } for offer in offers]
+
+        return jsonify(result) if offers else jsonify([]), 200
+
+    except Exception as e:
+        logger.error(f"Error fetching offers by package name: {e}")
+        return jsonify({'error': 'Internal Server Error'}), 500
+
+# Search offers by game and package name
+@offers_blueprint.route('/search', methods=['GET'])
+def search_offers():
+    try:
+        tournament_name = request.args.get('tournament_name', '').strip().lower()
+        team_home = request.args.get('team_home', '').strip().lower()
+        team_away = request.args.get('team_away', '').strip().lower()
+        package_name = request.args.get('package_name', '').strip().lower()
+
+        if not (tournament_name or team_home or team_away or package_name):
+            return jsonify({'error': 'At least one search parameter is required'}), 400
+
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+
+        game_query = Game.query
+        if tournament_name:
+            game_query = game_query.filter(func.lower(Game.tournament_name).ilike(f'%{tournament_name}%'))
+        if team_home:
+            game_query = game_query.filter(func.lower(Game.team_home).ilike(f'%{team_home}%'))
+        if team_away:
+            game_query = game_query.filter(func.lower(Game.team_away).ilike(f'%{team_away}%'))
+
+        games = game_query.all()
+        game_ids = [game.id for game in games]
+
+        package_query = StreamingPackage.query
+        if package_name:
+            package_query = package_query.filter(func.lower(StreamingPackage.name).ilike(f'%{package_name}%'))
+
+        packages = package_query.all()
+        package_ids = [package.id for package in packages]
+
+        offers_query = StreamingOffer.query
+        if game_ids:
+            offers_query = offers_query.filter(StreamingOffer.game_id.in_(game_ids))
+        if package_ids:
+            offers_query = offers_query.filter(StreamingOffer.streaming_package_id.in_(package_ids))
+
+        offers = offers_query.paginate(page=page, per_page=per_page, error_out=False)
+        result = [{
+            'id': offer.id,
+            'live': offer.live,
+            'highlights': offer.highlights,
+            'game_details': {
+                'team_home': offer.game.team_home,
+                'team_away': offer.game.team_away,
+                'starts_at': offer.game.starts_at.strftime("%Y-%m-%d %H:%M:%S"),
+                'tournament_name': offer.game.tournament_name
+            },
+            'package_details': {
+                'name': offer.package.name,
+                'monthly_price_cents': offer.package.monthly_price_cents,
+                'monthly_price_yearly_subscription_in_cents': offer.package.monthly_price_yearly_subscription_in_cents
+            }
+        } for offer in offers.items]
+
+        return jsonify(result) if offers.items else jsonify([]), 200
+
+    except Exception as e:
+        logger.error(f"Error searching offers: {e}")
+        return jsonify({'error': 'Internal Server Error'}), 500
