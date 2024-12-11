@@ -9,80 +9,57 @@ logging.basicConfig(filename='data_loader.log', level=logging.WARNING,
 
 def load_data():
     try:
-        # Clear existing data
+        print("\n=== Starting Data Load Process ===")
+        
+        # 首先清空现有的offers数据
+        print("Clearing existing offers data...")
         db.session.query(StreamingOffer).delete()
-        db.session.query(Game).delete()
-        db.session.query(StreamingPackage).delete()
         db.session.commit()
         
-        # Load the game data
-        games_df = pd.read_csv("data/bc_game.csv")
-        games = [
-            Game(
-                id=row['id'],
-                team_home=row['team_home'],
-                team_away=row['team_away'],
-                starts_at=pd.to_datetime(row['starts_at']),
-                tournament_name=row['tournament_name']
-            )
-            for _, row in games_df.iterrows()
-        ]
-        db.session.bulk_save_objects(games)
-        db.session.commit()
-        print("Game data loaded successfully")
-
-        # Load streaming package data
-        packages_df = pd.read_csv("data/bc_streaming_package.csv")
-        packages = [
-            StreamingPackage(
-                id=row['id'],
-                name=row['name'],
-                monthly_price_cents=row['monthly_price_cents'] if pd.notna(row['monthly_price_cents']) else None,
-                monthly_price_yearly_subscription_in_cents=row['monthly_price_yearly_subscription_in_cents']
-            )
-            for _, row in packages_df.iterrows()
-        ]
-        db.session.bulk_save_objects(packages)
-        db.session.commit()
-        print("Streaming package data loaded successfully.")
-
-        # Load the streaming offer data
+        # 加载和验证CSV数据
         offers_df = pd.read_csv("data/bc_streaming_offer.csv")
-        offers = []
-
-        # Pre-fetch all existing games and packages to improve performance
-        existing_games = set(g.id for g in Game.query.options(load_only(Game.id)).all())
-        existing_packages = set(p.id for p in StreamingPackage.query.options(load_only(StreamingPackage.id)).all())
-
-        for _, row in offers_df.iterrows():
-            if row['game_id'] in existing_games and row['streaming_package_id'] in existing_packages:
-                offers.append(
-                    StreamingOffer(
-                        game_id=row['game_id'],
-                        streaming_package_id=row['streaming_package_id'],
-                        live=bool(row['live']),
-                        highlights=bool(row['highlights'])
-                    )
+        print(f"\nLoaded {len(offers_df)} records from CSV")
+        
+        # 验证外键关系
+        game_ids = set(offers_df['game_id'].unique())
+        package_ids = set(offers_df['streaming_package_id'].unique())
+        existing_game_ids = set(g.id for g in Game.query.all())
+        existing_package_ids = set(p.id for p in StreamingPackage.query.all())
+        
+        print("\nValidating foreign key relationships:")
+        print(f"Games - Required: {len(game_ids)}, Available: {len(existing_game_ids)}")
+        print(f"Packages - Required: {len(package_ids)}, Available: {len(existing_package_ids)}")
+        
+        # 验证数据完整性
+        valid_offers = offers_df[
+            offers_df['game_id'].isin(existing_game_ids) & 
+            offers_df['streaming_package_id'].isin(existing_package_ids)
+        ]
+        
+        print(f"\nValid offers to load: {len(valid_offers)} out of {len(offers_df)}")
+        
+        # 批量加载数据
+        batch_size = 1000
+        for i in range(0, len(valid_offers), batch_size):
+            batch = valid_offers.iloc[i:i + batch_size]
+            offers = [
+                StreamingOffer(
+                    game_id=row['game_id'],
+                    streaming_package_id=row['streaming_package_id'],
+                    live=bool(row['live']),
+                    highlights=bool(row['highlights'])
                 )
-            else:
-                if row['game_id'] not in existing_games:
-                    msg = f"Warning: Game with ID {row['game_id']} does not exist."
-                    logging.warning(msg)
-                    print(msg)
-                if row['streaming_package_id'] not in existing_packages:
-                    msg = f"Warning: Streaming package with ID {row['streaming_package_id']} does not exist."
-                    logging.warning(msg)
-                    print(msg)
-
-        if offers:
+                for _, row in batch.iterrows()
+            ]
             db.session.bulk_save_objects(offers)
             db.session.commit()
-            print("Streaming offer data loaded successfully.")
-        else:
-            print("No valid offers to load.")
-
+            print(f"Processed {i + len(batch)} offers")
+        
+        # 验证最终结果
+        final_count = StreamingOffer.query.count()
+        print(f"\nFinal validation - Loaded offers: {final_count}")
+        
     except Exception as e:
         db.session.rollback()
-        logging.error(f"Error loading data: {e}")
-        print(f"Error loading data: {e}")
-
+        print(f"\nError during data load: {e}")
+        raise

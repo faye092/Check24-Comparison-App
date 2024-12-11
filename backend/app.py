@@ -43,7 +43,7 @@ app.register_blueprint(offers_blueprint, url_prefix="/offers")
 def home():
     return "Welcome to the Check24 Streaming Package Comparison!"
 
-# # add custom command to load data
+# add custom command to load data
 # @app.cli.command("load-data")
 # def load_data_command():
 #     """Load data into the database."""
