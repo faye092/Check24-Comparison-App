@@ -1,65 +1,68 @@
 import pandas as pd
+from datetime import datetime
+from ..models import db, Game, StreamingPackage, StreamingOffer
 import logging
-from models import db, Game, StreamingPackage, StreamingOffer
-from sqlalchemy.orm import load_only
 
-# Configuring logging
-logging.basicConfig(filename='data_loader.log', level=logging.WARNING, 
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def load_data_in_batches(session, data, model, batch_size=500):
+    for i in range(0, len(data), batch_size):
+        batch = data[i: i + batch_size]
+        session.bulk_save_objects(batch)
+        session.commit()
 
 def load_data():
+    logger.info("=== Starting Data Load Process ===")
     try:
-        print("\n=== Starting Data Load Process ===")
-        
-        # 首先清空现有的offers数据
-        print("Clearing existing offers data...")
-        db.session.query(StreamingOffer).delete()
+        # 清理现有数据
+        StreamingOffer.query.delete()
+        StreamingPackage.query.delete()
+        Game.query.delete()
         db.session.commit()
         
-        # 加载和验证CSV数据
-        offers_df = pd.read_csv("data/bc_streaming_offer.csv")
-        print(f"\nLoaded {len(offers_df)} records from CSV")
-        
-        # 验证外键关系
-        game_ids = set(offers_df['game_id'].unique())
-        package_ids = set(offers_df['streaming_package_id'].unique())
-        existing_game_ids = set(g.id for g in Game.query.all())
-        existing_package_ids = set(p.id for p in StreamingPackage.query.all())
-        
-        print("\nValidating foreign key relationships:")
-        print(f"Games - Required: {len(game_ids)}, Available: {len(existing_game_ids)}")
-        print(f"Packages - Required: {len(package_ids)}, Available: {len(existing_package_ids)}")
-        
-        # 验证数据完整性
-        valid_offers = offers_df[
-            offers_df['game_id'].isin(existing_game_ids) & 
-            offers_df['streaming_package_id'].isin(existing_package_ids)
+        # 加载 Game 数据
+        games_df = pd.read_csv("data/bc_game.csv")
+        games = []
+        for _, row in games_df.iterrows():
+            starts_at = datetime.strptime(row['starts_at'], "%Y-%m-%d %H:%M:%S")
+            games.append(Game(
+                id=row['id'],
+                team_home=row['team_home'],
+                team_away=row['team_away'],
+                starts_at=starts_at,
+                tournament_name=row['tournament_name']
+            ))
+        load_data_in_batches(db.session, games, Game)
+
+        # 加载 StreamingPackage 数据
+        packages_df = pd.read_csv("data/bc_streaming_package.csv")
+        packages = [
+            StreamingPackage(
+                id=row['id'],
+                name=row['name'],
+                monthly_price_cents=row['monthly_price_cents'] or 0,
+                monthly_price_yearly_subscription_in_cents=row['monthly_price_yearly_subscription_in_cents'] or 0
+            )
+            for _, row in packages_df.iterrows()
         ]
-        
-        print(f"\nValid offers to load: {len(valid_offers)} out of {len(offers_df)}")
-        
-        # 批量加载数据
-        batch_size = 1000
-        for i in range(0, len(valid_offers), batch_size):
-            batch = valid_offers.iloc[i:i + batch_size]
-            offers = [
-                StreamingOffer(
-                    game_id=row['game_id'],
-                    streaming_package_id=row['streaming_package_id'],
-                    live=bool(row['live']),
-                    highlights=bool(row['highlights'])
-                )
-                for _, row in batch.iterrows()
-            ]
-            db.session.bulk_save_objects(offers)
-            db.session.commit()
-            print(f"Processed {i + len(batch)} offers")
-        
-        # 验证最终结果
-        final_count = StreamingOffer.query.count()
-        print(f"\nFinal validation - Loaded offers: {final_count}")
-        
+        load_data_in_batches(db.session, packages, StreamingPackage)
+
+        # 加载 StreamingOffer 数据
+        offers_df = pd.read_csv("data/bc_streaming_offer.csv")
+        valid_offers = [
+            StreamingOffer(
+                game_id=row['game_id'],
+                streaming_package_id=row['streaming_package_id'],
+                live=bool(row['live']),
+                highlights=bool(row['highlights'])
+            )
+            for _, row in offers_df.iterrows()
+        ]
+        load_data_in_batches(db.session, valid_offers, StreamingOffer)
+
+        logger.info("Data load completed successfully.")
     except Exception as e:
+        logger.error(f"Error during data loading: {e}")
         db.session.rollback()
-        print(f"\nError during data load: {e}")
-        raise

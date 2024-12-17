@@ -1,136 +1,93 @@
 from flask import Blueprint, jsonify, request
-from models import Game
-from sqlalchemy import func
-from datetime import datetime
-import logging
+from ..services.game_service import (
+    get_all_games_service,
+    get_games_by_team_service,
+    get_games_by_tournament_service,
+    get_games_by_date_service,
+    get_games_by_date_range_service
+)
+from ..utils.response_format import success_response, error_response
 
-# Initialize Blueprint for games with a URL prefix
-games_blueprint = Blueprint('games', __name__, url_prefix='/games')
+games_blueprint = Blueprint('games', __name__)
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Get all games
 @games_blueprint.route('/', methods=['GET'])
 def get_all_games():
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     if page <= 0 or per_page <= 0:
-        return jsonify({'error': 'Page and per_page must be positive integers'}), 400
+        return error_response("Page and per_page must be positive integers", 400)
 
-    games = Game.query.paginate(page=page, per_page=per_page, error_out=False)
-    result = [{
-        'id': game.id,
-        'team_home': game.team_home,
-        'team_away': game.team_away,
-        'starts_at': game.starts_at.strftime("%Y-%m-%d %H:%M:%S"),
-        'tournament_name': game.tournament_name
-    } for game in games.items]
-    return jsonify(result)
+    result = get_all_games_service(page, per_page)
+    return success_response(result)
 
-# Get game by team name
+
 @games_blueprint.route('/team', methods=['GET'])
 def get_games_by_team():
+    team_name = request.args.get('team_name', '').strip()
+    team_type = request.args.get('team_type', '').lower()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+
+    if not team_name:
+        return error_response("Team name is required", 400)
+    if team_type not in ['home', 'away', 'both', '']:
+        return error_response("Invalid team_type. Must be 'home', 'away', or 'both'", 400)
+
     try:
-        team_name = request.args.get('team_name', '').strip().lower()
-        if not team_name:
-            return jsonify({'error': 'Team name is required'}), 400
-
-        team_type = request.args.get('team_type', '').lower()
-        if team_type not in ['home', 'away', 'both', '']:
-            return jsonify({'error': "Invalid team_type. Must be 'home', 'away', or 'both'"}), 400
-
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-
-        # Filter matches based on team_type
-        if team_type == 'home':
-            games = Game.query.filter(func.lower(Game.team_home) == team_name).paginate(page=page, per_page=per_page, error_out=False)
-        elif team_type == 'away':
-            games = Game.query.filter(func.lower(Game.team_away) == team_name).paginate(page=page, per_page=per_page, error_out=False)
-        else:
-            games = Game.query.filter(
-                (func.lower(Game.team_home) == team_name) |
-                (func.lower(Game.team_away) == team_name)
-            ).paginate(page=page, per_page=per_page, error_out=False)
-
-        result = [{
-            'id': game.id,
-            'team_home': game.team_home,
-            'team_away': game.team_away,
-            'starts_at': game.starts_at.strftime("%Y-%m-%d %H:%M:%S"),
-            'tournament_name': game.tournament_name
-        } for game in games.items]
-
-        return jsonify(result) if games.items else jsonify([]), 200
-
+        result = get_games_by_team_service(team_name, team_type, page, per_page)
+        return success_response(result)
     except Exception as e:
-        logger.error(f"Error fetching games for team {team_name}: {e}")
-        return jsonify({'error': 'Internal Server Error'}), 500
+        return error_response(str(e), 500)
 
-# Get game by tournament name
+
 @games_blueprint.route('/tournament', methods=['GET'])
 def get_games_by_tournament():
+    tournament_name = request.args.get('tournament_name', '').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+
+    if not tournament_name:
+        return error_response("Tournament name is required", 400)
+
     try:
-        tournament_name = request.args.get('tournament_name', '').strip().lower()
-        if not tournament_name:
-            return jsonify({'error': 'Tournament name is required'}), 400
-
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-
-        games = Game.query.filter(func.lower(Game.tournament_name).ilike(f'%{tournament_name}%')).paginate(page=page, per_page=per_page, error_out=False)
-
-        result = [{
-            'id': game.id,
-            'team_home': game.team_home,
-            'team_away': game.team_away,
-            'starts_at': game.starts_at.strftime("%Y-%m-%d %H:%M:%S"),
-            'tournament_name': game.tournament_name
-        } for game in games.items]
-
-        return jsonify(result) if games.items else jsonify([]), 200
-
+        result = get_games_by_tournament_service(tournament_name, page, per_page)
+        return success_response(result)
     except Exception as e:
-        logger.error(f"Error fetching games for tournament {tournament_name}: {e}")
-        return jsonify({'error': 'Internal Server Error'}), 500
+        return error_response(str(e), 500)
 
-# Get game by year and month
-@games_blueprint.route('/by_year_month', methods=['GET'])
-def get_games_by_year_month():
+
+@games_blueprint.route('/date', methods=['GET'])
+def get_games_by_date():
+    date = request.args.get('date', '').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+
+    if not date:
+        return error_response("Date is required in YYYY-MM-DD format", 400)
+
     try:
-        year = request.args.get('year')
-        month = request.args.get('month')
-        if not year or not month:
-            return jsonify({'error': 'Please provide both year and month'}), 400
-
-        try:
-            year = int(year)
-            month = int(month)
-            start_date = datetime(year, month, 1)
-            if month == 12:
-                end_date = datetime(year + 1, 1, 1)
-            else:
-                end_date = datetime(year, month + 1, 1)
-        except ValueError:
-            return jsonify({'error': 'Year and month must be valid integers'}), 400
-
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-
-        games = Game.query.filter(Game.starts_at >= start_date, Game.starts_at < end_date).paginate(page=page, per_page=per_page, error_out=False)
-
-        result = [{
-            'id': game.id,
-            'team_home': game.team_home,
-            'team_away': game.team_away,
-            'starts_at': game.starts_at.strftime("%Y-%m-%d %H:%M:%S"),
-            'tournament_name': game.tournament_name
-        } for game in games.items]
-
-        return jsonify(result) if games.items else jsonify([]), 200
-
+        result = get_games_by_date_service(date, page, per_page)
+        return success_response(result)
+    except ValueError as ve:
+        return error_response(str(ve), 400)
     except Exception as e:
-        logger.error(f"Error fetching games by year and month: {e}")
-        return jsonify({'error': 'Internal Server Error'}), 500
+        return error_response(str(e), 500)
+
+
+@games_blueprint.route('/date-range', methods=['GET'])
+def get_games_by_date_range():
+    start_date = request.args.get('start_date', '').strip()
+    end_date = request.args.get('end_date', '').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+
+    if not start_date or not end_date:
+        return error_response("Both start_date and end_date are required in YYYY-MM-DD format", 400)
+
+    try:
+        result = get_games_by_date_range_service(start_date, end_date, page, per_page)
+        return success_response(result)
+    except ValueError as ve:
+        return error_response(str(ve), 400)
+    except Exception as e:
+        return error_response(str(e), 500)

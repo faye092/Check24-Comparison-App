@@ -1,76 +1,59 @@
-from flask import Blueprint, jsonify, request
-from models import StreamingPackage
-import logging
+from flask import Blueprint, request
+from ..services.package_service import (
+    get_all_packages_service,
+    search_packages_service,
+    get_optimal_packages_by_filters
+)
+from ..utils.response_format import success_response, error_response
 
-packages_blueprint = Blueprint('packages', __name__, url_prefix='/packages')
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+packages_blueprint = Blueprint('packages', __name__)
 
 @packages_blueprint.route('/', methods=['GET'])
 def get_all_packages():
-    try:
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-        if page <= 0 or per_page <= 0:
-            return jsonify({'error': 'Page and per_page must be positive integers'}), 400
 
-        packages = StreamingPackage.query.paginate(page=page, per_page=per_page, error_out=False)
-        result = [{
-            'name': package.name,
-            'monthly_price_cents': package.monthly_price_cents,
-            'monthly_price_yearly_subscription_in_cents': package.monthly_price_yearly_subscription_in_cents
-        } for package in packages.items]
-        return jsonify(result)
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+
+    if page <= 0 or per_page <= 0:
+        return error_response("Page and per_page must be positive integers", 400)
+
+    try:
+        result = get_all_packages_service(page, per_page)
+        return success_response(result)
     except Exception as e:
-        logger.error(f"Error fetching packages: {e}")
-        return jsonify({'error': 'Internal Server Error'}), 500
+        return error_response(str(e), 500)
+
 
 @packages_blueprint.route('/search', methods=['GET'])
 def search_packages():
+
+    name = request.args.get('name', '').strip().lower()
+    subscription_type = request.args.get('type', '').strip().lower()
+
     try:
-        name = request.args.get('name', '').strip().lower()
-        subscription_type = request.args.get('type', '').strip().lower()  # free, yearly_only, full
-        
-        query = StreamingPackage.query
-        
-        if name:
-            query = query.filter(StreamingPackage.name.ilike(f'%{name}%'))
-        
-        if subscription_type == 'free':
-            query = query.filter(
-                StreamingPackage.monthly_price_cents == 0,
-                StreamingPackage.monthly_price_yearly_subscription_in_cents == 0
-            )
-        elif subscription_type == 'yearly_only':
-            query = query.filter(
-                StreamingPackage.monthly_price_cents.is_(None),
-                StreamingPackage.monthly_price_yearly_subscription_in_cents > 0
-            )
-        elif subscription_type == 'full':
-            query = query.filter(
-                StreamingPackage.monthly_price_cents > 0,
-                StreamingPackage.monthly_price_yearly_subscription_in_cents > 0
-            )
-
-        packages = query.order_by(
-            StreamingPackage.monthly_price_yearly_subscription_in_cents
-        ).all()
-        
-        result = []
-        for package in packages:
-            package_info = {
-                'name': package.name,
-                'type': 'free' if package.monthly_price_yearly_subscription_in_cents == 0 else
-                        'yearly_only' if package.monthly_price_cents is None else 'full',
-                'yearly_subscription': package.monthly_price_yearly_subscription_in_cents
-            }
-            if package.monthly_price_cents is not None:
-                package_info['monthly_subscription'] = package.monthly_price_cents
-            
-            result.append(package_info)
-
-        return jsonify(result)
+        result = search_packages_service(name, subscription_type)
+        return success_response(result)
+    except ValueError as ve:
+        return error_response(str(ve), 400)
     except Exception as e:
-        logger.error(f"Error searching packages: {e}")
-        return jsonify({'error': 'Internal Server Error'}), 500
+        return error_response(str(e), 500)
+
+
+@packages_blueprint.route('/optimal', methods=['POST'])
+def find_optimal_packages():
+
+    data = request.json
+    tournament_name = data.get("tournament_name", "").strip()
+    team_name = data.get("team_name", "").strip()
+    date = data.get("date", "").strip()
+
+    if not tournament_name and not team_name and not date:
+        return error_response("Please provide at least one filter: tournament_name, team_name, or date.", 400)
+
+    try:
+        result = get_optimal_packages_by_filters(tournament_name, team_name, date)
+        return success_response(result)
+    except ValueError as ve:
+        return error_response(str(ve), 400)
+    except Exception as e:
+        return error_response(str(e), 500)
