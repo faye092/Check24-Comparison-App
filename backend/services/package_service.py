@@ -12,7 +12,7 @@ def get_all_packages_service(page, per_page):
             "id": package.id,
             "name": package.name,
             "monthly_price_cents": package.monthly_price_cents,
-            "yearly_price_cents": package.monthly_price_yearly_subscription_in_cents,
+            "monthly_price_yearly_price_cents": package.monthly_price_yearly_subscription_in_cents,
         }
         for package in packages.items
     ]
@@ -70,7 +70,7 @@ def get_game_ids_by_filters(tournament_name=None, team_name=None, date=None):
     if date:
         try:
             date_obj = datetime.strptime(date, "%Y-%m-%d").date()
-            query = query.filter(func.date(Game.starts_at) == date_obj)
+            query = query.filter(func.date(Game.starts_at) >= date_obj)
         except ValueError:
             raise ValueError("Invalid date format. Use YYYY-MM-DD.")
 
@@ -95,7 +95,7 @@ def get_package_availability(game_ids):
                 "id": package_id,
                 "name": offer.package.name,
                 "monthly_price_cents": offer.package.monthly_price_cents,
-                "yearly_price_cents": offer.package.monthly_price_yearly_subscription_in_cents,
+                "monthly_price_yearly_price_cents": offer.package.monthly_price_yearly_subscription_in_cents,
                 "live": False,
                 "highlights": False,
                 "covered_games": set(),
@@ -123,7 +123,7 @@ def find_optimal_packages_service(game_ids):
 
         for package_id, details in package_availability.items():
             covered_games = remaining_games & details["covered_games"]
-            price = details["monthly_price_cents"] or details["yearly_price_cents"]
+            price = details["monthly_price_cents"] or details["monthly_price_yearly_price_cents"]
             if price and len(covered_games) > 0:
                 value = len(covered_games) / price
                 if value > best_value:
@@ -139,13 +139,13 @@ def find_optimal_packages_service(game_ids):
             {
                 "name": selected_package["name"],
                 "monthly_price_cents": selected_package["monthly_price_cents"],
-                "yearly_price_cents": selected_package["yearly_price_cents"],
+                "monthly_price_yearly_price_cents": selected_package["monthly_price_yearly_price_cents"],
                 "live": selected_package["live"],
                 "highlights": selected_package["highlights"],
                 "covered_games": list(selected_package["covered_games"]),
             }
         )
-        total_cost += selected_package["monthly_price_cents"] or selected_package["yearly_price_cents"]
+        total_cost += selected_package["monthly_price_cents"] or selected_package["monthly_price_yearly_price_cents"]
         remaining_games -= selected_package["covered_games"]
 
     return {"packages": optimal_packages, "total_cost": total_cost}
