@@ -1,5 +1,6 @@
 import os
 from flask import Flask
+from flask_cors import CORS
 from .db import db
 from .models import Game
 from .utils.data_loader import load_data
@@ -29,6 +30,8 @@ def create_app():
 
     
     register_routes(app)
+
+    CORS(app) # 允许跨域请求
 
     @app.route("/")
     def home():

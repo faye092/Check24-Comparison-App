@@ -1,7 +1,10 @@
-import React, { useState } from "react";
+import React from "react";
 import { Box, VStack, Heading, Text, HStack } from "@chakra-ui/react";
+import { useSearch } from "../context/SearchContext";
 
 const Sidebar: React.FC = () => {
+  const { selectedTeams, toggleTeamSelection, selectedTournaments, setTournamentSelection, teamType, setTeamType } = useSearch();
+  
   const tournamentCategories = [
     {
       name: "INTERNATIONAL",
@@ -87,25 +90,8 @@ const Sidebar: React.FC = () => {
     "Deutschland",
     "Manchester City",
     "Paris Saint-Germain",
-    "Barcelona",
-    "Liverpool",
-    "Juventus",
     "Borussia Dortmund",
-    "Inter Milan",
-    "Arsenal",
-    "AC Milan",
   ];
-
-  // State to manage selected teams
-  const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
-
-  const toggleTeamSelection = (team: string) => {
-    setSelectedTeams((prev) =>
-      prev.includes(team)
-        ? prev.filter((t) => t !== team) // Remove if already selected
-        : [...prev, team] // Add if not selected
-    );
-  };
 
   return (
     <Box
@@ -120,6 +106,45 @@ const Sidebar: React.FC = () => {
       mt={0}
     >
       <VStack align="start" p={2}>
+        {/* Team Type Filter */}
+        <Box>
+          <HStack align="center" mb={2}>
+            <Text fontSize="lg" color="blue.500">
+              📊
+            </Text>
+            <Heading size="md" color="gray.700">
+              TEAM TYPE
+            </Heading>
+          </HStack>
+          <VStack align="start" p={2}>
+            {["both", "home", "away"].map((type) => (
+              <label
+                key={type}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="teamType"
+                  value={type}
+                  checked={teamType === type}
+                  onChange={() => setTeamType(type)}
+                />
+                <Text fontSize="xs" color="gray.800">
+                  {type === "both"
+                    ? "All"
+                    : type === "home"
+                    ? "Home"
+                    : "Away"}
+                </Text>
+              </label>
+            ))}
+          </VStack>
+        </Box>
+
         {/* Popular Teams Section */}
         <Box>
           <HStack align="center" mb={2}>
@@ -168,7 +193,12 @@ const Sidebar: React.FC = () => {
                     key={tournament}
                     style={{ display: "flex", alignItems: "center", gap: "8px" }}
                     >
-                    <input type="checkbox" name={tournament} />
+                    <input
+                      type="checkbox"
+                      name={tournament}
+                      checked={selectedTournaments.includes(tournament)}
+                      onChange={(e) => setTournamentSelection(tournament, e.target.checked)}
+                    />
                     <Text fontSize="xs" color="gray.800">
                         {tournament}
                     </Text>
